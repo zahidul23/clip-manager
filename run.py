@@ -313,7 +313,9 @@ class MainWindow(QMainWindow):
 		self.vidButtons = []
 		self.vidLabels = []
 		self.vidPaths = []
+		self.vidBox = {}
 		self.numVids = 0
+		self.sURLS = {}
 		self.init_ui()
 
 	def init_ui(self):
@@ -326,11 +328,16 @@ class MainWindow(QMainWindow):
 		self.popMenu = QMenu(self)
 		self.cursor = QCursor()
 
-		try:
+		if not os.path.exists('thumbs'):
 			os.makedirs('thumbs')
-		except OSError as e:
-			if e.errno != errno.EEXIST:
-				raise
+
+		if os.path.exists('streamableURLS.json'):
+			with open('streamableURLS.json') as json_file:
+				self.sURLS = json.load(json_file)
+		else:
+			with open('streamableURLS.json', 'w') as outfile:
+				json.dump(self.sURLS, outfile)
+		
 
 		self.loadSettings()
 		self.loadGrid()
@@ -348,6 +355,8 @@ class MainWindow(QMainWindow):
 		self.setWindowTitle("Clips")
 		self.setGeometry(520,260,1030,590)
 		self.show()
+
+		#print(self.vidBox[self.numVids-1].itemAt(1).widget().setText("ggggg"))
 
 
 	def loadSettings(self):
@@ -436,14 +445,20 @@ class MainWindow(QMainWindow):
 
 		self.popMenu.popup(self.cursor.pos())
 
-	def showUploadProgress(self, progress):
-		print(progress)
+	def showUploadProgress(self, progress, filePath):
+		self.vidBox[filePath].itemAt(1).widget().setText("Uploading... %s"%(progress))
+	def onUploadComplete(self, response, filePath):
+		vidurl = 'https://streamable.com/%s' %  response['shortcode']
 
-	def onUploadComplete(self, response):
-		print(response)
-	def onProcessingComplete(self, vidurl):
-		print(vidurl)
-		webbrowser.open(vidurl, new=2)
+		self.sURLS[filePath] =  vidurl
+		with open('streamableURLS.json', 'w') as outfile:
+			json.dump(self.sURLS, outfile)
+
+		self.vidBox[filePath].itemAt(1).widget().setText("Open URL (Processing...)")
+		self.vidBox[filePath].itemAt(1).widget().setEnabled(True)
+		self.vidBox[filePath].itemAt(1).widget().clicked.connect(lambda: webbrowser.open(vidurl, new=2))
+	def onProcessingComplete(self, vidurl, filePath):
+		self.vidBox[filePath].itemAt(1).widget().setText("Open URL")
 
 	def uploadStreamable(self, folderPath):
 		self.fileUp = mytools.FileUploader(folderPath, self.username,self.password)
@@ -489,33 +504,69 @@ class MainWindow(QMainWindow):
 		for fl in self.paths:
 			if x==0:
 				x=3
-				y-=2
+				y-=1
 
 			n = self.numVids
-			self.vidButtons.append(QPushButton())
 
-			self.vidButtons[n].setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-			self.vidButtons[n].customContextMenuRequested.connect(lambda state, vPath = fl: self.on_buttonRightClick(vPath))
+			self.vidBox[fl[0]] = QVBoxLayout()
+
+			#buttonsArea =  QHBoxLayout()
+			miniButtons = QHBoxLayout()
+
+			vidButton = QPushButton()
+			vidButton.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+			vidButton.customContextMenuRequested.connect(lambda state, vPath = fl: self.on_buttonRightClick(vPath))
+
+			vidButton.setIcon(QIcon(thumbs[fl[0]]))
+			vidButton.setIconSize(QtCore.QSize(256,144))
+			vidButton.clicked.connect(lambda state, vPath = fl[0]: self.openVideoWindow(self,vPath))
+
+			openFolderButton = QPushButton()
+			uploadStreamableButton = QPushButton()
+			openStreamableButton = QPushButton("Not Uploaded")
+			copyStreamableButton = QPushButton()
+
+			'''
+
+			openFolderButton.setIcon(QIcon('resources/openFolder.png'))
+			uploadStreamableButton.setIcon(QIcon('resources/uploadStreamable.png'))
+			openStreamableButton.setIcon(QIcon('resources/openURL.png'))
+			copyStreamableButton.setIcon(QIcon('resources/copyURL.png'))
+
+			openFolderButton.setIconSize(QtCore.QSize(30,20))
+			uploadStreamableButton.setIconSize(QtCore.QSize(30,20))
+			openStreamableButton.setIconSize(QtCore.QSize(30,20))
+			copyStreamableButton.setIconSize(QtCore.QSize(30,20))
+			'''
+
+			openStreamableButton.setDisabled(True)
+			if fl[0] in self.sURLS:
+				openStreamableButton.setEnabled(True)
+				openStreamableButton.setText('Open URL')
+				openStreamableButton.clicked.connect(lambda: webbrowser.open(self.sURLS[fl[0]], new=2))
+
+			vidLabel = QLabel(fl[1])
+			vidLabel.setMaximumWidth(300)
+			vidLabel.setAlignment(QtCore.Qt.AlignCenter)
+
+			#miniButtons.addWidget(openFolderButton)
+			#miniButtons.addWidget(uploadStreamableButton)
+			#miniButtons.addWidget(copyStreamableButton)
+			#miniButtons.addWidget(openStreamableButton)
+
+			#buttonsArea.addWidget(vidButton)
+			#buttonsArea.addLayout(miniButtons)
+
+			self.vidBox[fl[0]].addWidget(vidButton)
+			self.vidBox[fl[0]].addWidget(openStreamableButton)
+			self.vidBox[fl[0]].addWidget(vidLabel)
 
 
-
-			self.vidButtons[n].setIcon(QIcon(thumbs[fl[0]]))
-			self.vidButtons[n].setIconSize(QtCore.QSize(256,144))
-			self.vidButtons[n].clicked.connect(lambda state, vPath = fl[0]: self.openVideoWindow(self,vPath))
 			try:
 				self.gridLayout.itemAtPosition(y,x).widget().setParent(None)
 			except:
 				pass
-			self.gridLayout.addWidget(self.vidButtons[n],y,x)
-
-			self.vidLabels.append(QLabel(fl[1]))
-			self.vidLabels[n].setMaximumWidth(300)
-			self.vidLabels[n].setAlignment(QtCore.Qt.AlignCenter)
-			try:
-				self.gridLayout.itemAtPosition(y+1,x).widget().setParent(None)
-			except:
-				pass
-			self.gridLayout.addWidget(self.vidLabels[n],y+1,x)
+			self.gridLayout.addLayout(self.vidBox[fl[0]],y,x)
 
 			self.numVids += 1
 			x-=1			
@@ -530,10 +581,6 @@ def directory_changed(path):
 
 
 if __name__=="__main__":
-
-
-	mypath = "C:\\Users\\Zahidul\\Videos\\"
-
 
 	app=QApplication(sys.argv)
 	app.setStyle("Fusion")

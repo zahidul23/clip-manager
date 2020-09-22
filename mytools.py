@@ -18,9 +18,9 @@ def verifyStreamableAuth(username,password):
 	return True
 
 class FileUploader(QThread):
-	upload_progress = pyqtSignal(object)
-	upload_complete = pyqtSignal(object)
-	processing_complete = pyqtSignal(object)
+	upload_progress = pyqtSignal(object,object)
+	upload_complete = pyqtSignal(object,object)
+	processing_complete = pyqtSignal(object,object)
 	def __init__(self,filePath, username, password):
 		QThread.__init__(self)
 		self.filePath = filePath
@@ -38,7 +38,9 @@ class FileUploader(QThread):
 	def my_callback(self,monitor):
 		# Your callback function
 		progress = "%d%%" %(monitor.bytes_read/monitor.len * 100)
-		self.upload_progress.emit(progress)
+		if (monitor.bytes_read/8192) % 10 == 0:
+        	#time.sleep(1/25)
+			self.upload_progress.emit(progress, self.filePath)
 		#print("%d%%" %(monitor.bytes_read/monitor.len * 100))
 
 	def upload(self,):
@@ -51,12 +53,12 @@ class FileUploader(QThread):
 		r = requests.post('https://api.streamable.com/upload',auth=(self.username, self.password), data=m, headers={'Content-Type': m.content_type})
 
 		if r.status_code == 200:
-			self.upload_complete.emit(r.json())
+			self.upload_complete.emit(r.json(), self.filePath)
 			
 			self.checkProcessing(r.json()['shortcode'])
 
 		else:
-			self.upload_complete.emit('Upload Failed')
+			self.upload_complete.emit('Upload Failed',self.filePath)
 
 	def checkProcessing(self,sc):
 		p_stat = 1
@@ -66,19 +68,19 @@ class FileUploader(QThread):
 		waitTime = 2
 		while p_stat == 1:
 			if time.time() > toTime:
-				self.processing_complete.emit("time-out")
+				self.processing_complete.emit("timed-out", self.filePath)
 				return
 			r = requests.get(url)
 			p_stat =  r.json()['status']
 			waitTime = self.getWaitTime(waitTime)
 
 		vidurl = 'https://streamable.com/' + sc
-		self.processing_complete.emit(vidurl)
+		self.processing_complete.emit(vidurl, self.filePath)
 
 	def getWaitTime(self,sec):
 		time.sleep(sec)
 		if sec < 60:
-			sec = sec * 2
+			sec = sec * 1.5
 		return sec
 
 

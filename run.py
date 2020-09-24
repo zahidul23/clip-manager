@@ -9,29 +9,13 @@ from PyQt5 import QtCore, QtTest
 from watchdog.observers import Observer
 from watchdog.events import PatternMatchingEventHandler
 import mytools
-import qrangeslider #Source: https://stackoverflow.com/a/47342469 ,https://github.com/rsgalloway/qrangeslider
+import qrangeslider #Source: https://stackoverflow.com/a/47342469 ,pip
 import time
 import json
 import subprocess
 import os
 from ffmpy import FFmpeg
 import webbrowser
-
-
-
-class UploadThread(QtCore.QThread):
-	def __init__(self,filePath,username,password):
-		QtCore.QThread.__init__(self)
-		self.user = username
-		self.pw = password
-		self.fPath =  filePath
-
-	def __del__(self):
-		self.wait()
-
-	def run(self):
-		mytools.uploadToStreamable(self.fPath, self.user,self.pw)
-
 
 class VideoWindow(QWidget):
 	def __init__(self, vidPath):
@@ -167,8 +151,7 @@ class VideoWindow(QWidget):
 
 	def adjustForStart(self, startPos):
 		self.startTime =  startPos
-		if self.positionSlider.value() < startPos:
-			self.mediaPlayer.setPosition(startPos)
+		self.mediaPlayer.setPosition(startPos)
 
 		self.startTimeInput.setTime(QtCore.QTime(0,0).addMSecs(startPos))
 		self.endTimeInput.setMinimumTime(QtCore.QTime(0,0).addMSecs(startPos))
@@ -351,10 +334,9 @@ class MainWindow(QMainWindow):
 		self.vw = None
 		self.username = ''
 		self.password = ''
-		self.vidButtons = []
-		self.vidLabels = []
 		self.vidPaths = []
 		self.vidBox = {}
+		self.vidframe = {}
 		self.numVids = 0
 		self.sURLS = {}
 		self.uprate = 18
@@ -366,15 +348,29 @@ class MainWindow(QMainWindow):
 		self.widget = QWidget()
 		self.gridLayout = QGridLayout()
 
+		topBar = QHBoxLayout()
+
 		settingsButton  = QPushButton("Settings")
 		settingsButton.setMaximumWidth(100)
 		settingsButton.clicked.connect(self.openSettings)
+		topBar.addWidget(settingsButton, alignment= QtCore.Qt.AlignLeft)
 
-		vlayout = QVBoxLayout()
-		vlayout.addWidget(settingsButton)
-		vlayout.addLayout(self.gridLayout)
+		saButton  = QPushButton("Open Streamable")
+		saButton.setMaximumWidth(140)
+		saButton.setStyleSheet("background-color: #17a2b8")
+		saButton.clicked.connect(lambda: webbrowser.open('https://streamable.com', new=2))
+		topBar.addWidget(saButton)
 
-		self.widget.setLayout(vlayout)
+		settingsButton  = QPushButton("Refresh")
+		settingsButton.setMaximumWidth(100)
+		settingsButton.clicked.connect(self.loadGrid)
+		topBar.addWidget(settingsButton)
+
+		self.vlayout = QVBoxLayout()
+		self.vlayout.addLayout(topBar)
+		self.vlayout.addLayout(self.gridLayout)
+
+		self.widget.setLayout(self.vlayout)
 		self.popMenu = QMenu(self)
 		self.cursor = QCursor()
 
@@ -408,7 +404,6 @@ class MainWindow(QMainWindow):
 		self.setGeometry(520,260,1030,590)
 		self.show()
 
-		#print(self.vidBox[self.numVids-1].itemAt(1).widget().setText("ggggg"))
 
 
 	def openSettings(self):
@@ -453,43 +448,72 @@ class MainWindow(QMainWindow):
 		self.uprate = settings['upload_speed']
 
 
+	def removeFile(self, path):
+		if os.path.exists(path):
+			os.remove(path)
+		try:
+			self.vidframe[path].setParent(None)
+			for i in reversed(range(self.vidBox[path].count())): 
+				self.vidBox[path].itemAt(i).widget().setParent(None)
+		except:
+			pass
+
 	def addVid(self, newVidPath):
-		fl = [newVidPath, os.split(newVidPath)[1]] 
+		fl = [newVidPath, os.path.split(newVidPath)[1]] 
 		x = self.gridx
 		y = self.gridy
 		if x==0:
 			x=3
-			y-=2
+			y-=1
 
 		n = self.numVids
-		self.vidButtons.append(QPushButton())
 
-		self.vidButtons[n].setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-		self.vidButtons[n].customContextMenuRequested.connect(lambda state, vPath = fl: self.on_buttonRightClick(vPath))
+		self.vidBox[fl[0]] = QVBoxLayout()
 
 
+		vidButton = QPushButton()
+		vidButton.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+		vidButton.customContextMenuRequested.connect(lambda state, vPath = fl: self.on_buttonRightClick(vPath))
 
-		self.vidButtons[n].setIcon(QIcon(mytools.getThumb(newVidPath)))
-		self.vidButtons[n].setIconSize(QtCore.QSize(256,144))
-		self.vidButtons[n].clicked.connect(lambda state, vPath = fl[0]: self.openVideoWindow(self,vPath))
+		vidButton.setIcon(QIcon(mytools.getThumb(newVidPath)))
+		vidButton.setIconSize(QtCore.QSize(256,144))
+		vidButton.clicked.connect(lambda state, vPath = fl[0]: self.openVideoWindow(self,vPath))
+
+		openStreamableButton = QPushButton("Not Uploaded")
+
+		openStreamableButton.setDisabled(True)
+		if fl[0] in self.sURLS:
+			openStreamableButton.setEnabled(True)
+			openStreamableButton.setStyleSheet("background-color: #17a2b8")
+			openStreamableButton.setText('Open URL')
+			openStreamableButton.clicked.connect(lambda state, url = self.sURLS[fl[0]]: webbrowser.open(url, new=2))
+
+		vidLabel = QLabel(fl[1])
+		vidLabel.setMaximumWidth(300)
+		vidLabel.setAlignment(QtCore.Qt.AlignCenter)
+
+
+		self.vidBox[fl[0]].addWidget(vidButton)
+		self.vidBox[fl[0]].addWidget(openStreamableButton)
+		self.vidBox[fl[0]].addWidget(vidLabel)
+
+
 		try:
 			self.gridLayout.itemAtPosition(y,x).widget().setParent(None)
 		except:
 			pass
-		self.gridLayout.addWidget(self.vidButtons[n],y,x)
 
-		self.vidLabels.append(QLabel(fl[1]))
-		self.vidLabels[n].setMaximumWidth(300)
-		self.vidLabels[n].setAlignment(QtCore.Qt.AlignCenter)
-		try:
-			self.gridLayout.itemAtPosition(y+1,x).widget().setParent(None)
-		except:
-			pass
-		self.gridLayout.addWidget(self.vidLabels[n],y+1,x)
+		self.vidframe[fl[0]] =  QFrame()
+		self.vidframe[fl[0]].setLayout(self.vidBox[fl[0]])
+		self.vidframe[fl[0]].setObjectName('vidFrame')
+		self.vidframe[fl[0]].setStyleSheet("QWidget#vidFrame {border:3px solid rgb(0, 0, 0)} ")
+		self.gridLayout.addWidget(self.vidframe[fl[0]],y,x)
 
 		self.numVids += 1
-		x-=1
-		self.x = x		
+		x-=1			
+
+		self.gridx = x
+		self.gridy = y
 
 
 	def openVideoWindow(self,checked,vidPath):
@@ -504,15 +528,22 @@ class MainWindow(QMainWindow):
 		openFolderAction = QAction('Open Folder', self)
 		openFolderAction.triggered.connect(lambda state, dPath =fileData[0]: self.openFolderExplorer(dPath))
 
-
 		uploadToStreamable = QAction('Upload', self)
 		uploadToStreamable.triggered.connect(lambda state, fPath =fileData[0]: self.uploadStreamable(fPath))
+
+		delVideo = QAction('Delete',self)
+		delVideo.triggered.connect(lambda state, fpath =fileData[0]: self.removeFile(fpath))
+
+		blankAction = QAction('',self)
 
 		self.popMenu.addAction(openFolderAction)
 		self.popMenu.addSeparator()
 		self.popMenu.addAction(uploadToStreamable) 
+		self.popMenu.addAction(blankAction)
+		self.popMenu.addAction(delVideo)
 
 		self.popMenu.popup(self.cursor.pos())
+
 
 	def showUploadProgress(self, progress, filePath):
 		self.vidBox[filePath].itemAt(1).widget().setText("Uploading... %s"%(progress))
@@ -546,6 +577,9 @@ class MainWindow(QMainWindow):
 		self.paths = mytools.getFilesCheckingThumbs(self.mypath)
 		x=len(self.paths)%3
 		y=999999
+
+		self.numVids = 0
+		#self.gridLayout = QGridLayout()
 
 		thumbs = mytools.getThumbs()
 
@@ -591,22 +625,31 @@ class MainWindow(QMainWindow):
 			except:
 				pass
 
-			frame =  QFrame()
-			frame.setLayout(self.vidBox[fl[0]])
-			frame.setObjectName('vidFrame')
-			frame.setStyleSheet("QWidget#vidFrame {border:3px solid rgb(0, 0, 0)} ")
-			self.gridLayout.addWidget(frame,y,x)
+			self.vidframe[fl[0]] =  QFrame()
+			self.vidframe[fl[0]].setLayout(self.vidBox[fl[0]])
+			self.vidframe[fl[0]].setObjectName('vidFrame')
+			self.vidframe[fl[0]].setStyleSheet("QWidget#vidFrame {border:3px solid rgb(0, 0, 0)} ")
+			self.gridLayout.addWidget(self.vidframe[fl[0]],y,x)
 
 			self.numVids += 1
-			x-=1			
+			x-=1
+
 
 		self.gridx = x
 		self.gridy = y
 
+		for d in range(30):
+			if x==0:
+				x=3
+				y-=1
+			try:
+				self.gridLayout.itemAtPosition(y,x).widget().setParent(None)
+			except:
+				pass			
 
+		self.vlayout.itemAt(1).setParent(None)
+		self.vlayout.addLayout(self.gridLayout)
 
-def directory_changed(path):
-	print('Directory Changed: %s' % path)
 
 
 if __name__=="__main__":

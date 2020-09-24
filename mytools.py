@@ -124,29 +124,6 @@ class FileUploader(QThread):
 		self.delay =  (8 * self.inc) / kByte
 
 
-def uploadToStreamable(filePath, username, password):
-	def my_callback(monitor):
-		# Your callback function
-		print("%d%%" %(monitor.bytes_read/monitor.len * 100))
-		#if (monitor.bytes_read/8192) % 5 == 0:
-			#time.sleep(1/25)
-
-	e = MultipartEncoder(
-		fields={'field0': 'value', 'field1': 'value',
-				'field2': ('filename', open(filePath, 'rb'), 'text/plain')}
-		)
-	m = MultipartEncoderMonitor(e, my_callback)
-
-	r = requests.post('https://api.streamable.com/upload',auth=(username, password), data=m,
-					  headers={'Content-Type': m.content_type})
-				  
-	print(r.status_code)
-	print(r.json())	
-
-
-def startUploadThread(filePath, username, password):
-	uT = threading.Thread(target=startUploadThread, args=(filePath, username, password))
-	uT.start()
 
 def getAvailableName(mypath, add):
 	noExt, ext = os.path.splitext(mypath)
@@ -181,8 +158,8 @@ def getFiles(mypath):
 	for dirpath, dirnames, filenames in os.walk(mypath):
 		for filename in [f for f in filenames if f.endswith(('.mp4','.mkv','.flv','.gif',))]:
 			fullPath = os.path.join(dirpath, filename)
-			files.append((fullPath, filename))
-	files.sort(key= lambda tup: os.path.getctime(tup[0]), reverse=False)		
+			files.append((fullPath, filename, os.path.getctime(fullPath)))
+	files.sort(key= lambda x:x[2], reverse=False)		
 	return files
 
 def getThumbs():
@@ -238,7 +215,7 @@ def getFilesCheckingThumbs(mypath):
 	for dirpath, dirnames, filenames in os.walk(mypath):
 		for filename in [f for f in filenames if f.endswith(('.mp4','.mkv','.flv','.gif',))]:
 			fullPath = os.path.join(dirpath, filename)
-			files.append((fullPath, filename))
+			files.append((fullPath, filename, os.path.getctime(fullPath)))
 			if fullPath not in thumbs:
 				thumbName = randName()
 				thumbName = 'thumbs/'+ thumbName+ '.png'
@@ -249,7 +226,7 @@ def getFilesCheckingThumbs(mypath):
 	with open('thumbs.json', 'w') as outfile:
 		json.dump(thumbs, outfile)
 
-	files.sort(key= lambda tup: os.path.getctime(tup[0]), reverse=False)
+	files.sort(key= lambda x:x[2], reverse=False)
 
 	return files
 

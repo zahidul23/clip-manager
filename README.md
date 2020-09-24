@@ -21,6 +21,9 @@ First time setup will require selection of videos folder and login details for u
 
 ## Usage
 
+[Demo](https://streamable.com/4ko7e1)
+
+
 All videos within the selected folder and its subfolders will be shown on the main window.
 
 ![python_UlclF1ZzKZ](https://user-images.githubusercontent.com/22843707/94120516-36cb7980-fe1e-11ea-817b-f074f6746ecf.png)

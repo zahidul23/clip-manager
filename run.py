@@ -1,6 +1,6 @@
 import sys
-from PyQt5.QtWidgets import QDialog, QFileDialog, QMenu, QTimeEdit, QAction, QLabel,QScrollArea
-from PyQt5.QtWidgets import QApplication,QPushButton,QLineEdit, QMessageBox,QStyle
+from PyQt5.QtWidgets import QFrame,QDialog, QFileDialog, QMenu, QTimeEdit, QAction, QLabel,QScrollArea
+from PyQt5.QtWidgets import QSpinBox, QApplication,QPushButton,QLineEdit, QMessageBox,QStyle
 from PyQt5.QtWidgets import QWidget,QMainWindow,QGridLayout,QVBoxLayout,QHBoxLayout, QSizePolicy, QSlider 
 from PyQt5.QtGui import QPalette, QColor, QIcon, QCursor
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
@@ -49,7 +49,7 @@ class VideoWindow(QWidget):
 
 		self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
 
-		videoWidget = QVideoWidget()
+		self.videoWidget = QVideoWidget()
 
 		self.playButton = QPushButton()
 		self.playButton.setEnabled(True)
@@ -86,8 +86,8 @@ class VideoWindow(QWidget):
 		self.mediaPlayer.setMedia(QMediaContent(QtCore.QUrl.fromLocalFile(self.fullPath)))
 
 
-		layout.addWidget(videoWidget)
-		self.mediaPlayer.setVideoOutput(videoWidget)
+		layout.addWidget(self.videoWidget)
+		self.mediaPlayer.setVideoOutput(self.videoWidget)
 		self.mediaPlayer.setNotifyInterval(10)
 		self.mediaPlayer.stateChanged.connect(self.mediaStateChanged)
 		self.mediaPlayer.positionChanged.connect(self.positionChanged)
@@ -120,6 +120,11 @@ class VideoWindow(QWidget):
 
 	def closeEvent(self, event):
 		self.mediaPlayer.stop()
+		self.videoWidget.setParent(None)
+		self.mediaPlayer.setParent(None)
+		self.mediaPlayer.deleteLater()
+		self.videoWidget.deleteLater()
+
 
 	def trimVid(self):
 		self.trimButton.setEnabled(False)
@@ -200,13 +205,11 @@ class SettingsWindow(QDialog):
 	def __init__(self):
 		super().__init__()
 		self.settings = {}
-		self.username = ''
-		self.password = ''
-		self.rootpath = ''
 		self.init_ui()
 
 	def init_ui(self):
 		layout = QVBoxLayout()
+		layout.setStretch(0,0)
 		self.setLayout(layout)
 
 		if os.path.exists('settings.json'):
@@ -224,42 +227,80 @@ class SettingsWindow(QDialog):
 		fdHBox.addWidget(self.fdInput)
 		fdHBox.addWidget(fdButton)
 
+		uploadOptions = QHBoxLayout()
+		streamableOptions = QVBoxLayout()
+
 		uHBox = QHBoxLayout()
 		userLabel = QLabel("Username: ")
 		self.userInput = QLineEdit()
+		self.userInput.setMaximumWidth(150)
 		uHBox.addWidget(userLabel)
 		uHBox.addWidget(self.userInput)
 
 		pHBox = QHBoxLayout()
 		pwLabel = QLabel("Password: ")
 		self.pwInput = QLineEdit()
+		self.pwInput.setMaximumWidth(150)
 		self.pwInput.setEchoMode(QLineEdit.Password)
 		pHBox.addWidget(pwLabel)
 		pHBox.addWidget(self.pwInput)
 
+		streamableOptions.addLayout(uHBox)
+		streamableOptions.addLayout(pHBox)
+
+		uprateOptions = QVBoxLayout()
+		uprateLabel = QLabel("Upload Speed (megabits per second):")
+		self.uprateInput = QSpinBox()
+		self.uprateInput.setRange(1,1000)
+		self.uprateInput.setMaximumWidth(80)
+		self.upDetails = QLabel()
+		self.uprateInput.valueChanged.connect(self.uploadChanged)
+		self.uprateInput.setValue(24)
+
+		uprateOptions.addWidget(uprateLabel)
+		uprateOptions.addWidget(self.uprateInput)
+		uprateOptions.addWidget(self.upDetails)
+
+		uploadOptions.addLayout(streamableOptions)
+		uploadOptions.addLayout(uprateOptions)
 
 		saveButton =  QPushButton("Save")
 		saveButton.clicked.connect(self.saveSettings)
 		saveButton.setDefault(True)
 
+		if 'root_path' in self.settings:
+			self.fdInput.setText(self.settings['root_path'])
+		if 'username' in self.settings:
+			self.userInput.setText(self.settings['username'])
+		if 'password' in self.settings:
+			self.pwInput.setText(mytools.decrypt_text(self.settings['password']))
+		if 'upload_speed' in self.settings:
+			self.uprateInput.setValue(int(self.settings['upload_speed']))
+
 		layout.addWidget(fpLabel)
 		layout.addLayout(fdHBox)
-		layout.addLayout(uHBox)
-		layout.addLayout(pHBox)
+		layout.addWidget(QLabel("Streamable Settings:"))
+		layout.addLayout(uploadOptions)
 		layout.addWidget(saveButton)
 
 
 		self.setWindowTitle("Settings")
-		self.resize(640,480)
+		self.resize(400,200)
 		#self.show()
+
+	def uploadChanged(self, uprate):
+		mBit = uprate
+		mByte = uprate / 8
+		self.upDetails.setText("%04.2f Mb/s = %04.2f MB/s"%(mBit,mByte))
 
 	def setRootFolder(self):
 		file = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
 		self.fdInput.setText(file)
 	def saveSettings(self):
 		self.settings['username'] = self.userInput.text()
-		self.settings['password'] = self.pwInput.text()
+		self.settings['password'] = mytools.encrypt_text(self.pwInput.text())
 		self.settings['root_path'] = self.fdInput.text()
+		self.settings['upload_speed'] = self.uprateInput.value()
 		with open('settings.json', 'w') as outfile:
 			json.dump(self.settings, outfile)
 
@@ -316,6 +357,7 @@ class MainWindow(QMainWindow):
 		self.vidBox = {}
 		self.numVids = 0
 		self.sURLS = {}
+		self.uprate = 18
 		self.init_ui()
 
 	def init_ui(self):
@@ -324,9 +366,19 @@ class MainWindow(QMainWindow):
 		self.widget = QWidget()
 		self.gridLayout = QGridLayout()
 
-		self.widget.setLayout(self.gridLayout)
+		settingsButton  = QPushButton("Settings")
+		settingsButton.setMaximumWidth(100)
+		settingsButton.clicked.connect(self.openSettings)
+
+		vlayout = QVBoxLayout()
+		vlayout.addWidget(settingsButton)
+		vlayout.addLayout(self.gridLayout)
+
+		self.widget.setLayout(vlayout)
 		self.popMenu = QMenu(self)
 		self.cursor = QCursor()
+
+
 
 		if not os.path.exists('thumbs'):
 			os.makedirs('thumbs')
@@ -359,6 +411,21 @@ class MainWindow(QMainWindow):
 		#print(self.vidBox[self.numVids-1].itemAt(1).widget().setText("ggggg"))
 
 
+	def openSettings(self):
+		self.sw = SettingsWindow()
+		self.sw.exec_()
+		settings = self.sw.getSettings()
+
+		if 'root_path' not in settings:
+			sys.exit()
+		if not os.path.exists(settings['root_path']):
+			sys.exit()
+
+		self.username =  settings['username']
+		self.password =  mytools.decrypt_text(settings['password'])
+		self.mypath =  settings['root_path']
+		self.uprate = settings['upload_speed']
+
 	def loadSettings(self):
 		settings = {}
 
@@ -381,8 +448,10 @@ class MainWindow(QMainWindow):
 				sys.exit()
 
 		self.username =  settings['username']
-		self.password =  settings['password']
+		self.password =  mytools.decrypt_text(settings['password'])
 		self.mypath =  settings['root_path']
+		self.uprate = settings['upload_speed']
+
 
 	def addVid(self, newVidPath):
 		fl = [newVidPath, os.split(newVidPath)[1]] 
@@ -456,12 +525,13 @@ class MainWindow(QMainWindow):
 
 		self.vidBox[filePath].itemAt(1).widget().setText("Open URL (Processing...)")
 		self.vidBox[filePath].itemAt(1).widget().setEnabled(True)
+		self.vidBox[filePath].itemAt(1).widget().setStyleSheet("background-color: #17a2b8")
 		self.vidBox[filePath].itemAt(1).widget().clicked.connect(lambda: webbrowser.open(vidurl, new=2))
 	def onProcessingComplete(self, vidurl, filePath):
 		self.vidBox[filePath].itemAt(1).widget().setText("Open URL")
 
 	def uploadStreamable(self, folderPath):
-		self.fileUp = mytools.FileUploader(folderPath, self.username,self.password)
+		self.fileUp = mytools.FileUploader(folderPath, self.username,self.password,self.uprate)
 		self.fileUp.start()
 		self.fileUp.upload_progress.connect(self.showUploadProgress)
 		self.fileUp.upload_complete.connect(self.onUploadComplete)
@@ -472,28 +542,6 @@ class MainWindow(QMainWindow):
 		folderPath = folderPath.replace('/','\\')
 		subprocess.Popen(r'explorer /select,%s'%folderPath)
 
-	'''
-	def rereloadGrid(self):
-		self.reloadGrid()
-
-	def reloadGGGrid(self):
-		self.gridx = (self.numVids%3)
-		self.gridy = 999999
-		for i in range(self.numVids):
-			print(i)
-			if self.gridx==0:
-				self.gridx=3
-				self.gridy-=2
-			try:
-				self.gridLayout.itemAtPosition(self.gridy,self.gridx).widget().setParent(None)
-			finally:
-				self.gridLayout.addWidget(self.vidButtons[i], self.gridy,self.gridx)
-			try:
-				self.gridLayout.itemAtPosition(self.gridy+1,self.gridx).widget().setParent(None)
-			finally:
-				self.gridLayout.addWidget(self.vidLabels[i], self.gridy+1,self.gridx)
-			self.gridx -=1
-	'''
 	def loadGrid(self):
 		self.paths = mytools.getFilesCheckingThumbs(self.mypath)
 		x=len(self.paths)%3
@@ -510,8 +558,6 @@ class MainWindow(QMainWindow):
 
 			self.vidBox[fl[0]] = QVBoxLayout()
 
-			#buttonsArea =  QHBoxLayout()
-			miniButtons = QHBoxLayout()
 
 			vidButton = QPushButton()
 			vidButton.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -521,41 +567,19 @@ class MainWindow(QMainWindow):
 			vidButton.setIconSize(QtCore.QSize(256,144))
 			vidButton.clicked.connect(lambda state, vPath = fl[0]: self.openVideoWindow(self,vPath))
 
-			openFolderButton = QPushButton()
-			uploadStreamableButton = QPushButton()
 			openStreamableButton = QPushButton("Not Uploaded")
-			copyStreamableButton = QPushButton()
-
-			'''
-
-			openFolderButton.setIcon(QIcon('resources/openFolder.png'))
-			uploadStreamableButton.setIcon(QIcon('resources/uploadStreamable.png'))
-			openStreamableButton.setIcon(QIcon('resources/openURL.png'))
-			copyStreamableButton.setIcon(QIcon('resources/copyURL.png'))
-
-			openFolderButton.setIconSize(QtCore.QSize(30,20))
-			uploadStreamableButton.setIconSize(QtCore.QSize(30,20))
-			openStreamableButton.setIconSize(QtCore.QSize(30,20))
-			copyStreamableButton.setIconSize(QtCore.QSize(30,20))
-			'''
 
 			openStreamableButton.setDisabled(True)
 			if fl[0] in self.sURLS:
 				openStreamableButton.setEnabled(True)
+				openStreamableButton.setStyleSheet("background-color: #17a2b8")
 				openStreamableButton.setText('Open URL')
-				openStreamableButton.clicked.connect(lambda: webbrowser.open(self.sURLS[fl[0]], new=2))
+				openStreamableButton.clicked.connect(lambda state, url = self.sURLS[fl[0]]: webbrowser.open(url, new=2))
 
 			vidLabel = QLabel(fl[1])
 			vidLabel.setMaximumWidth(300)
 			vidLabel.setAlignment(QtCore.Qt.AlignCenter)
 
-			#miniButtons.addWidget(openFolderButton)
-			#miniButtons.addWidget(uploadStreamableButton)
-			#miniButtons.addWidget(copyStreamableButton)
-			#miniButtons.addWidget(openStreamableButton)
-
-			#buttonsArea.addWidget(vidButton)
-			#buttonsArea.addLayout(miniButtons)
 
 			self.vidBox[fl[0]].addWidget(vidButton)
 			self.vidBox[fl[0]].addWidget(openStreamableButton)
@@ -566,7 +590,12 @@ class MainWindow(QMainWindow):
 				self.gridLayout.itemAtPosition(y,x).widget().setParent(None)
 			except:
 				pass
-			self.gridLayout.addLayout(self.vidBox[fl[0]],y,x)
+
+			frame =  QFrame()
+			frame.setLayout(self.vidBox[fl[0]])
+			frame.setObjectName('vidFrame')
+			frame.setStyleSheet("QWidget#vidFrame {border:3px solid rgb(0, 0, 0)} ")
+			self.gridLayout.addWidget(frame,y,x)
 
 			self.numVids += 1
 			x-=1			

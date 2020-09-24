@@ -6,6 +6,31 @@ from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 import requests
 from PyQt5.QtCore import pyqtSignal,QThread
 import threading
+from cryptography.fernet import Fernet
+
+def generate_key():
+	key = Fernet.generate_key()
+	with open("st.key", "wb") as key_file:
+		key_file.write(key)
+
+def load_key():
+	if not os.path.exists("st.key"):
+		generate_key()
+	return open("st.key", "rb").read()
+
+def encrypt_text(message):
+	key = load_key()
+	encoded_message = message.encode()
+	f = Fernet(key)
+	encrypted_message = f.encrypt(encoded_message)
+
+	return(encrypted_message.decode("utf-8"))
+def decrypt_text(encrypted_message):
+	key = load_key()
+	f = Fernet(key)
+	decrypted_message = f.decrypt(encrypted_message.encode("utf-8"))
+
+	return decrypted_message.decode("utf-8")
 
 
 def verifyStreamableAuth(username,password):
@@ -21,12 +46,16 @@ class FileUploader(QThread):
 	upload_progress = pyqtSignal(object,object)
 	upload_complete = pyqtSignal(object,object)
 	processing_complete = pyqtSignal(object,object)
-	def __init__(self,filePath, username, password):
+	def __init__(self,filePath, username, password,uprate):
 		QThread.__init__(self)
 		self.filePath = filePath
 		self.fileName = os.path.split(filePath)[1]
 		self.username = username
 		self.password = password
+		self.timePrev = 0
+		self.inc = 10
+		self.uprate = uprate
+		self.delay = 0
 
 	def __del__(self):
 		return
@@ -38,8 +67,12 @@ class FileUploader(QThread):
 	def my_callback(self,monitor):
 		# Your callback function
 		progress = "%d%%" %(monitor.bytes_read/monitor.len * 100)
-		if (monitor.bytes_read/8192) % 10 == 0:
-        	#time.sleep(1/25)
+		if (monitor.bytes_read/8192) % self.inc == 0:
+
+			while(time.time()-self.timePrev < self.delay):
+				pass
+			self.timePrev = time.time()
+			#time.sleep(1/25)
 			self.upload_progress.emit(progress, self.filePath)
 		#print("%d%%" %(monitor.bytes_read/monitor.len * 100))
 
@@ -50,6 +83,8 @@ class FileUploader(QThread):
 		)
 		m = MultipartEncoderMonitor(e, self.my_callback)
 
+		self.timePrev = time.time()
+		self.setUploadSpeed(self.uprate)
 		r = requests.post('https://api.streamable.com/upload',auth=(self.username, self.password), data=m, headers={'Content-Type': m.content_type})
 
 		if r.status_code == 200:
@@ -82,6 +117,11 @@ class FileUploader(QThread):
 		if sec < 60:
 			sec = sec * 1.5
 		return sec
+
+	def setUploadSpeed(self, uprate):
+		self.uprate = uprate
+		kByte = uprate * 128
+		self.delay =  (8 * self.inc) / kByte
 
 
 def uploadToStreamable(filePath, username, password):

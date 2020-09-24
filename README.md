@@ -7,12 +7,22 @@ Primarily used to trim down Shadowplay recordings and share to Streamable.com.
 * [K-Lite Codecs](https://codecguide.com/download_k-lite_codec_pack_basic.htm) (for video playback)
 * [FFMPEG & FFProbe](https://ffmpeg.org/download.html) (for video trimming and thumbnail generating)
 
+## Setup
 
-## Usage
+1. Download and extract the latest release from the [releases page](https://github.com/zahidul23/clip-manager/releases/).
+2. Install K-Lite Codecs from link above (recommended) or simply run the 3 files, "install_audio.bat", "install_video.bat", "install_splitter.bat" inside the "install_first" folder. The latter method may result in choppy playback. 
+3. FFMPEG is already provided, no need for additional downloads.
+4. Run clips.exe.
 
 First time setup will require selection of videos folder and login details for uploading to Streamable. Settings will be saved as a settings.json file in the executable's folder with the password encrypted.
 
 ![python_9QS9h1e9pE](https://user-images.githubusercontent.com/22843707/94120833-975ab680-fe1e-11ea-8408-c97f22a08a03.png)
+
+
+## Usage
+
+[Demo](https://streamable.com/4ko7e1)
+
 
 All videos within the selected folder and its subfolders will be shown on the main window.
 
@@ -24,7 +34,7 @@ Folders will be monitored and when a new video file is detected, it will be adde
 
 Click on the video thumbnail to open the editor. Use the top slider to choose start and end points for the video. The trim button will use FFMPEG to instantly create a separate file with the desired length. The new video will be placed at the top of the grid.
 
-![python_u8kvZ5fAfv](https://user-images.githubusercontent.com/22843707/94121476-5b742100-fe1f-11ea-8079-51304a35b89f.png)
+![python_B6MX6D6wpR](https://user-images.githubusercontent.com/22843707/94131444-eb1fcc80-fe2b-11ea-86e6-b58542737870.png)
 
 Right-click a video thumbnail to upload the file to Streamable. Upon completion, the button will be enabled to open the uploaded video URL.
 
